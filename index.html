@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover, maximum-scale=1.0">
+    <title>✨ Positioning · 弹幕律动 ✨</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-tap-highlight-color:transparent; }
+        body { background:#0a0f1a; display:flex; justify-content:center; align-items:center; min-height:100dvh; font-family:system-ui,sans-serif; touch-action:none; }
+        .game-container { position:relative; width:100%; max-width:500px; aspect-ratio:9/19; margin:0 auto; box-shadow:0 0 40px rgba(0,0,0,0.6); border-radius:24px; overflow:hidden; border:2px solid #7aa5d9; }
+        canvas { display:block; width:100%; height:100%; background:radial-gradient(circle at 30% 20%, #7ab3e0, #2a5f8a); touch-action:none; }
+        .hud { position:absolute; top:16px; left:16px; right:16px; display:flex; justify-content:space-between; align-items:center; pointer-events:none; z-index:10; }
+        .hud.hidden { display:none; }
+        .panel { background:rgba(10,20,30,0.6); backdrop-filter:blur(8px); padding:10px 20px; border-radius:60px; border:1px solid rgba(255,235,140,0.4); color:#ffecb3; font-weight:bold; text-shadow:0 2px 5px #00000050; box-shadow:0 6px 12px #00000030; pointer-events:auto; display:flex; align-items:center; gap:12px; }
+        .hp-panel { color:#ff8585; }
+        #overlayMessage {
+            font-size: 3.2rem !important; font-weight: 900 !important; font-style: italic; letter-spacing: 6px !important;
+            text-transform: uppercase; padding: 12px 22px !important; margin-bottom: 10px;
+            background: linear-gradient(135deg, #FFD700 0%, #00BFFF 50%, #9B59B6 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent !important;
+            text-shadow: 0 0 25px #FFD700, 0 0 50px #00BFFF, 0 0 80px #9B59B6, 0 4px 15px #00000080 !important;
+            background-color: transparent !important; backdrop-filter: none !important; border-radius: 0 !important;
+            border: none !important; box-shadow: none !important; white-space: nowrap; pointer-events: none;
+        }
+        @media (max-width: 400px) { #overlayMessage { font-size: 2.5rem !important; letter-spacing: 4px !important; padding: 8px 16px !important; } }
+        .pause-btn, .music-btn {
+            background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); font-size:1.8rem; padding:6px 12px; border-radius:40px; cursor:pointer;
+            border:1px solid #ffd966; color:#ffecb3; transition:0.1s; line-height:1; pointer-events:auto; box-shadow:0 4px 8px #00000030;
+            min-width:56px; text-align:center;
+        }
+        .pause-btn:active, .music-btn:active { transform:scale(0.94); background:rgba(20,20,40,0.8); }
+        .home-music-btn {
+            position: absolute; top: 16px; right: 16px; z-index: 25;
+            background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); font-size:1.8rem; padding:6px 12px; border-radius:40px;
+            border:1px solid #ffd966; color:#ffecb3; cursor:pointer; box-shadow:0 4px 8px #00000030;
+            min-width:56px; text-align:center; pointer-events:auto;
+        }
+        .overlay { position:absolute; top:0; left:0; right:0; bottom:0; display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(4,10,22,0.7); backdrop-filter:blur(6px); z-index:20; gap:20px; pointer-events:none; }
+        .overlay button { pointer-events:auto; background:linear-gradient(145deg,#ffe28c,#f5c542); border:none; color:#0c1322; font-weight:bold; font-size:1.5rem; padding:14px 40px; border-radius:60px; box-shadow:0 10px 0 #a57c1a,0 8px 20px #000; border:1px solid #fff1b5; cursor:pointer; transition:0.05s; letter-spacing:2px; }
+        .overlay button:active { transform:translateY(5px); box-shadow:0 5px 0 #a57c1a,0 8px 20px #000; }
+        .overlay .tip { color:#fff3d1; font-size:1.2rem; text-align:center; padding:10px 20px; text-shadow:0 2px 6px black; background:rgba(0,0,0,0.45); border-radius:40px; backdrop-filter:blur(4px); }
+        .record-badge { background:#1e3347; border-radius:30px; padding:8px 20px; font-size:1.1rem; color:#ffdf8c; margin-top:12px; border:1px solid #ffcd7e; }
+        .debug { position:absolute; bottom:10px; right:10px; color:#d0f0c0; font-size:11px; background:#00000080; padding:6px 12px; border-radius:24px; z-index:30; pointer-events:none; font-family:monospace; backdrop-filter:blur(4px); border:1px solid #b0c7e0; }
+        .hidden { display:none !important; }
+        .start-overlay-content { pointer-events:none; display:flex; flex-direction:column; align-items:center; gap:20px; }
+        .start-overlay-content button { pointer-events:auto; }
+        /* 难度提升提示 */
+        .rankup-toast {
+            position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+            color: #fff3b0; font-size: 2rem; font-weight: bold; text-shadow: 0 0 20px gold;
+            background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); padding: 10px 30px;
+            border-radius: 50px; border: 1px solid #ffd966; z-index: 15; pointer-events: none;
+            white-space: nowrap; transition: opacity 0.3s;
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="homeMusicBtn" class="home-music-btn">🎵</div>
+    <div id="rankUpToast" class="rankup-toast hidden">⚡ 难度提升 ⚡</div>
+
+    <div class="hud" id="gameHud">
+        <div class="panel">
+            <span>⏱️ <span id="scoreDisplay">0</span>s</span>
+            <span class="hp-panel">❤️ <span id="hpDisplay">3</span></span>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <div id="musicBtn" class="music-btn">🎵</div>
+            <div id="pauseBtn" class="pause-btn">⏸️</div>
+        </div>
+    </div>
+
+    <div id="startOverlay" class="overlay">
+        <div class="start-overlay-content">
+            <div id="overlayMessage">Positioning</div>
+            <div id="startRecordDisplay" class="record-badge">🏆 最高存活: -- 秒</div>
+            <button id="startBtn">▶ 开始游戏</button>
+            <div style="color:#3790dd; margin-top:12px; font-size:0.85rem;">道具随机出现 · 难度提升光环变色</div>
+        </div>
+    </div>
+
+    <div id="gameOverOverlay" class="overlay hidden">
+        <div class="tip" style="font-size:2.2rem; color:#fad98b;">游戏结束</div>
+        <div class="tip" id="finalScoreMsg">存活 0 秒</div>
+        <div id="recordMessage" class="record-badge" style="background:#2f3b4f;">⚡ 纪录提示 ⚡</div>
+        <button id="restartBtn">🔄 重新挑战</button>
+        <button id="homeBtnFromGameOver">🏠 返回主页</button>
+    </div>
+
+    <div id="pauseOverlay" class="overlay hidden pause-overlay">
+        <div class="tip" style="font-size:1.8rem;">⏸ 游戏暂停</div>
+        <div class="tip" id="pauseScoreTip">当前存活: 0 秒</div>
+        <button id="resumeBtn">▶ 继续游戏</button>
+        <button id="homeBtnFromPause">🏠 返回主页</button>
+    </div>
+
+    <div class="debug" id="debugInfo"></div>
+</div>
+
+<script>
+    (function(){
+        "use strict";
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreSpan = document.getElementById('scoreDisplay');
+        const hpSpan = document.getElementById('hpDisplay');
+        const startOverlay = document.getElementById('startOverlay');
+        const gameOverOverlay = document.getElementById('gameOverOverlay');
+        const pauseOverlay = document.getElementById('pauseOverlay');
+        const finalScoreMsg = document.getElementById('finalScoreMsg');
+        const recordMessageSpan = document.getElementById('recordMessage');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const homeBtnFromGameOver = document.getElementById('homeBtnFromGameOver');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const homeBtnFromPause = document.getElementById('homeBtnFromPause');
+        const debugDiv = document.getElementById('debugInfo');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const musicBtn = document.getElementById('musicBtn');
+        const homeMusicBtn = document.getElementById('homeMusicBtn');
+        const pauseScoreTip = document.getElementById('pauseScoreTip');
+        const startRecordDisplay = document.getElementById('startRecordDisplay');
+        const gameHud = document.getElementById('gameHud');
+        const rankUpToast = document.getElementById('rankUpToast');
+
+        // 音乐
+        let bgMusic = null, musicEnabled = true;
+        function initMusic() {
+            if (bgMusic) return;
+            bgMusic = new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3');
+            bgMusic.loop = true; bgMusic.volume = 0.4; bgMusic.preload = 'auto';
+        }
+        function updateMusicUI() {
+            const icon = musicEnabled ? '🎵' : '🎵⃠';
+            if (musicBtn) musicBtn.innerText = icon;
+            if (homeMusicBtn) homeMusicBtn.innerText = icon;
+        }
+        function toggleMusic() {
+            if (!bgMusic) initMusic();
+            if (musicEnabled) { bgMusic.pause(); musicEnabled = false; }
+            else { bgMusic.play().catch(e=>{}); musicEnabled = true; }
+            updateMusicUI();
+        }
+        function tryResumeMusic() { if (musicEnabled && bgMusic && bgMusic.paused) bgMusic.play().catch(e=>{}); }
+
+        const CONFIG = {
+            HERO_RADIUS: 20, MAX_HP: 3, MOVE_SPEED: 6.5, GYRO_SENSITIVITY: 1.8,
+            INVINCIBLE_DURATION: 80, GLOW_DURATION: 30,
+            POWERUP_DURATION_MIN: 180, POWERUP_DURATION_MAX: 300, SHIELD_DURATION: 240,
+            POWERUP_COOLDOWN_MIN: 360,  // 6秒 (60fps)  随机范围扩大为6~12秒
+            POWERUP_COOLDOWN_MAX: 720,  // 12秒
+            RANKUP_TOAST_DURATION: 60,
+        };
+
+        const DIFFICULTY_LEVELS = [
+            { name:"入门", startSec:0, endSec:29, speedMult:1.0, spawnIntervalFrames:48, extraChance:0.0, tripleChance:0.0, color:'#6f6' },
+            { name:"简单", startSec:30, endSec:59, speedMult:1.25, spawnIntervalFrames:38, extraChance:0.15, tripleChance:0.0, color:'#6cf' },
+            { name:"普通", startSec:60, endSec:89, speedMult:1.5625, spawnIntervalFrames:30, extraChance:0.35, tripleChance:0.05, color:'#c9f' },
+            { name:"困难", startSec:90, endSec:119, speedMult:1.953125, spawnIntervalFrames:22, extraChance:0.55, tripleChance:0.15, color:'#fb6' },
+            { name:"地狱", startSec:120, endSec:Infinity, speedMult:2.44140625, spawnIntervalFrames:16, extraChance:0.75, tripleChance:0.35, color:'#f66' }
+        ];
+        function getCurrentDifficulty(s) { for(let l of DIFFICULTY_LEVELS) if(s>=l.startSec && s<=l.endSec) return l; return DIFFICULTY_LEVELS[4]; }
+
+        let highestScore = 0;
+        function loadHighestRecord() {
+            const s = localStorage.getItem('hero_max_v8');
+            highestScore = s && !isNaN(parseInt(s)) ? parseInt(s) : 0;
+            if(startRecordDisplay) startRecordDisplay.innerText = `🏆 最高存活: ${highestScore} 秒`;
+        }
+        function saveHighScoreIfNeeded(cur) { if(cur > highestScore) { highestScore = cur; localStorage.setItem('hero_max_v8', highestScore); } }
+
+        let gameActive = false, isPaused = false, gameOverFlag = false, score = 0, hp = CONFIG.MAX_HP;
+        let hero = { x:0, y:0, radius:CONFIG.HERO_RADIUS, invincible:false, invincibleTimer:0, glowTimer:0, shield:false, shieldTimer:0 };
+        let skills = [], powerups = [], demoBullets = [], demoModeActive = true;
+        let canvasWidth = 0, canvasHeight = 0, framesUntilNextSpawn = 0, frameCounterForScore = 0;
+        let gyroActive = false, gyroX = 0, gyroY = 0, hasGyroPermission = false, isDragging = false;
+        let lastDifficultyName = null, powerupCooldown = 0, rankUpToastTimer = 0;
+        const SkillType = { VARUS_Q:'varus_q', EZ_Q:'ez_q', EZ_R:'ez_r', ASHE_R:'ashe_r' };
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvasWidth = rect.width; canvasHeight = rect.height;
+            canvas.width = canvasWidth; canvas.height = canvasHeight;
+            if(!gameActive && !gameOverFlag) { hero.x = canvasWidth/2; hero.y = canvasHeight/2; }
+            else if(gameActive && !isPaused) clampHero();
+        }
+        function clampHero() {
+            const r = hero.radius;
+            hero.x = Math.max(r, Math.min(canvasWidth-r, hero.x));
+            hero.y = Math.max(r, Math.min(canvasHeight-r, hero.y));
+        }
+
+        function spawnPowerup() {
+            if(!gameActive) return;
+            const type = Math.random() < 0.5 ? 'heart' : 'shield';
+            const r = 14; let x, y, safe = false, attempts = 0;
+            while(!safe && attempts < 50) {
+                x = Math.random()*(canvasWidth-2*r)+r;
+                y = Math.random()*(canvasHeight-2*r)+r;
+                if(Math.hypot(x-hero.x, y-hero.y) > hero.radius + r + 30) safe = true;
+                attempts++;
+            }
+            const duration = Math.floor(Math.random() * (CONFIG.POWERUP_DURATION_MAX - CONFIG.POWERUP_DURATION_MIN + 1)) + CONFIG.POWERUP_DURATION_MIN;
+            powerups.push({ type, x, y, radius: r, timer: duration });
+        }
+        function resetPowerupCooldown() {
+            powerupCooldown = Math.floor(Math.random() * (CONFIG.POWERUP_COOLDOWN_MAX - CONFIG.POWERUP_COOLDOWN_MIN + 1)) + CONFIG.POWERUP_COOLDOWN_MIN;
+        }
+
+        function initDemoMode() { demoBullets = []; demoModeActive = true; for(let i=0;i<12;i++) spawnDemoBullet(); }
+        function spawnDemoBullet() {
+            if(!canvasWidth) return;
+            const types = [SkillType.VARUS_Q, SkillType.EZ_Q, SkillType.EZ_R, SkillType.ASHE_R];
+            const type = types[Math.floor(Math.random()*types.length)];
+            let r = 12; if(type===SkillType.EZ_R) r=20; if(type===SkillType.ASHE_R) r=18;
+            const side = Math.floor(Math.random()*4); let x,y; const pad=30;
+            switch(side) {
+                case 0: x=Math.random()*canvasWidth; y=-pad; break;
+                case 1: x=canvasWidth+pad; y=Math.random()*canvasHeight; break;
+                case 2: x=Math.random()*canvasWidth; y=canvasHeight+pad; break;
+                case 3: x=-pad; y=Math.random()*canvasHeight; break;
+            }
+            const tx = canvasWidth/2 + (Math.random()-0.5)*canvasWidth*0.6;
+            const ty = canvasHeight/2 + (Math.random()-0.5)*canvasHeight*0.6;
+            const dx=tx-x, dy=ty-y, len=Math.hypot(dx,dy); if(len<0.01) return;
+            const sp = 1.8+Math.random()*2;
+            demoBullets.push({type,x,y,vx:dx/len*sp,vy:dy/len*sp,radius:r,traveled:0,maxDist:1200,rotation:0});
+        }
+        function updateDemoMode() {
+            if(!demoModeActive||!canvasWidth) return;
+            for(let i=demoBullets.length-1;i>=0;i--) {
+                const b = demoBullets[i];
+                b.x+=b.vx; b.y+=b.vy; b.traveled+=Math.hypot(b.vx,b.vy);
+                if(b.type===SkillType.ASHE_R) b.rotation=(b.rotation||0)+0.05;
+                if(b.x<-150||b.x>canvasWidth+150||b.y<-150||b.y>canvasHeight+150||b.traveled>b.maxDist) demoBullets.splice(i,1);
+            }
+            if(demoBullets.length<8 && Math.random()<0.03) spawnDemoBullet();
+        }
+
+        function fullResetToHome() {
+            gameActive = false; isPaused = false; gameOverFlag = false;
+            skills = []; powerups = []; score = 0; hp = CONFIG.MAX_HP; frameCounterForScore = 0;
+            if(canvasWidth) { hero.x = canvasWidth/2; hero.y = canvasHeight/2; }
+            hero.invincible = false; hero.invincibleTimer = 0; hero.glowTimer = 0; hero.shield = false; hero.shieldTimer = 0;
+            updateDisplay();
+            startOverlay.classList.remove('hidden'); homeMusicBtn.classList.remove('hidden');
+            gameOverOverlay.classList.add('hidden'); pauseOverlay.classList.add('hidden'); gameHud.classList.add('hidden');
+            framesUntilNextSpawn = getCurrentDifficulty(0).spawnIntervalFrames;
+            stopGyroListening(); initDemoMode(); demoModeActive = true; loadHighestRecord();
+            lastDifficultyName = null; rankUpToastTimer = 0; rankUpToast.classList.add('hidden');
+            tryResumeMusic();
+        }
+
+        function resetGame() {
+            demoModeActive = false; demoBullets = [];
+            gameActive = true; isPaused = false; gameOverFlag = false;
+            hp = CONFIG.MAX_HP; score = 0; skills = []; powerups = []; frameCounterForScore = 0;
+            hero = { x:canvasWidth/2, y:canvasHeight/2, radius:CONFIG.HERO_RADIUS, invincible:false, invincibleTimer:0, glowTimer:0, shield:false, shieldTimer:0 };
+            framesUntilNextSpawn = getCurrentDifficulty(0).spawnIntervalFrames;
+            resetPowerupCooldown();
+            updateDisplay();
+            startOverlay.classList.add('hidden'); homeMusicBtn.classList.add('hidden');
+            gameOverOverlay.classList.add('hidden'); pauseOverlay.classList.add('hidden'); gameHud.classList.remove('hidden');
+            lastDifficultyName = getCurrentDifficulty(0).name;
+            rankUpToastTimer = 0; rankUpToast.classList.add('hidden');
+            enableGyroAuto(); tryResumeMusic();
+        }
+        function enableGyroAuto() {
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission().then(perm => {
+                        if(perm==='granted') { hasGyroPermission=true; gyroActive=true; window.addEventListener('deviceorientation', handleOrientation); }
+                    }).catch(()=>{});
+                } else { hasGyroPermission=true; gyroActive=true; window.addEventListener('deviceorientation', handleOrientation); }
+            }
+        }
+        function gameLose() {
+            gameActive = false; gameOverFlag = true; isPaused = false;
+            gameHud.classList.add('hidden');
+            const cur = score;
+            const isNew = (cur > highestScore);
+            saveHighScoreIfNeeded(cur);
+            let msg = isNew ? "✨ 新纪录！太强啦 ✨" : (cur === highestScore && highestScore>0 ? "🏅 追平纪录！继续冲刺！" : "😤 差一点点，再试一次！");
+            finalScoreMsg.innerText = `存活 ${cur} 秒`;
+            recordMessageSpan.innerText = msg;
+            gameOverOverlay.classList.remove('hidden');
+            stopGyroListening();
+        }
+        function updateDisplay() { scoreSpan.innerText = score; hpSpan.innerText = hp; }
+        function showPauseMenu() { if(!gameActive||gameOverFlag||isPaused) return; isPaused=true; pauseScoreTip.innerText=`当前存活: ${score} 秒`; pauseOverlay.classList.remove('hidden'); }
+        function hidePauseAndResume() { if(!gameActive||!isPaused) return; isPaused=false; pauseOverlay.classList.add('hidden'); if(hasGyroPermission&&!gyroActive&&gameActive) { gyroActive=true; window.addEventListener('deviceorientation', handleOrientation); } }
+        function returnToHomeFromPause() { fullResetToHome(); draw(); }
+        function returnToHomeFromGameOver() { fullResetToHome(); draw(); }
+        function handleOrientation(e) {
+            if(!gameActive||isPaused||!gyroActive) return;
+            let b=e.beta, g=e.gamma; if(b===null||g===null) return;
+            let rx = Math.max(-1,Math.min(1,g/45)), ry = Math.max(-1,Math.min(1,b/45));
+            gyroX = gyroX*0.65 + rx*0.35; gyroY = gyroY*0.65 + ry*0.35;
+        }
+        function stopGyroListening() { gyroActive=false; window.removeEventListener('deviceorientation', handleOrientation); }
+
+        function handleDragStart(e) { if(!gameActive||isPaused) return; e.preventDefault(); isDragging=true; updateHeroFromEvent(e); }
+        function handleDragMove(e) { if(!gameActive||isPaused||!isDragging) return; e.preventDefault(); updateHeroFromEvent(e); }
+        function handleDragEnd() { isDragging=false; }
+        function updateHeroFromEvent(e) {
+            const rect = canvas.getBoundingClientRect();
+            const sx = canvasWidth/rect.width, sy = canvasHeight/rect.height;
+            let cx, cy;
+            if(e.touches) { cx=e.touches[0].clientX; cy=e.touches[0].clientY; }
+            else { cx=e.clientX; cy=e.clientY; }
+            let nx = (cx-rect.left)*sx, ny = (cy-rect.top)*sy;
+            nx = Math.max(hero.radius, Math.min(canvasWidth-hero.radius, nx));
+            ny = Math.max(hero.radius, Math.min(canvasHeight-hero.radius, ny));
+            hero.x = nx; hero.y = ny;
+        }
+
+        function spawnSkill() {
+            if(!gameActive) return;
+            const diff = getCurrentDifficulty(score);
+            const mult = diff.speedMult;
+            const rand = Math.random(); let type;
+            if(rand<0.3) type=SkillType.VARUS_Q; else if(rand<0.6) type=SkillType.EZ_Q; else if(rand<0.85) type=SkillType.EZ_R; else type=SkillType.ASHE_R;
+            const side=Math.floor(Math.random()*4); let x,y; const pad=20;
+            switch(side) {
+                case 0: x=Math.random()*canvasWidth; y=-pad; break;
+                case 1: x=canvasWidth+pad; y=Math.random()*canvasHeight; break;
+                case 2: x=Math.random()*canvasWidth; y=canvasHeight+pad; break;
+                case 3: x=-pad; y=Math.random()*canvasHeight; break;
+            }
+            const dx=hero.x-x, dy=hero.y-y, len=Math.hypot(dx,dy); if(len<0.01) return;
+            const bx=dx/len, by=dy/len;
+            let bs, r;
+            switch(type) { case SkillType.VARUS_Q: bs=4.8; r=12; break; case SkillType.EZ_Q: bs=3.8; r=13; break; case SkillType.EZ_R: bs=2.8; r=24; break; case SkillType.ASHE_R: bs=2.5; r=22; break; default: bs=3.5; r=12; }
+            let fs = bs*mult;
+            let vx = bx*fs + (Math.random()-0.5)*0.14*fs;
+            let vy = by*fs + (Math.random()-0.5)*0.14*fs;
+            skills.push({type,x,y,vx,vy,radius:r,maxDist:4000,traveled:0,rotation:0});
+        }
+        function generateBulletBatch() {
+            if(!gameActive) return;
+            const diff = getCurrentDifficulty(score);
+            spawnSkill();
+            if(Math.random()<diff.extraChance) spawnSkill();
+            if(Math.random()<diff.tripleChance) spawnSkill();
+            if(diff.name==="地狱" && Math.random()<0.2) spawnSkill();
+        }
+        function checkDifficultyUpgrade() {
+            if(!gameActive) return;
+            const curDiff = getCurrentDifficulty(score);
+            if(lastDifficultyName !== curDiff.name) {
+                hero.glowTimer = CONFIG.GLOW_DURATION;
+                lastDifficultyName = curDiff.name;
+                rankUpToastTimer = CONFIG.RANKUP_TOAST_DURATION;
+                rankUpToast.classList.remove('hidden');
+            }
+        }
+
+        function updateGame() {
+            if(!gameActive||isPaused) return;
+            checkDifficultyUpgrade();
+            if(hero.glowTimer>0) hero.glowTimer--;
+            if(hero.shield) { hero.shieldTimer--; if(hero.shieldTimer<=0) hero.shield = false; }
+            if(rankUpToastTimer>0) { rankUpToastTimer--; if(rankUpToastTimer<=0) rankUpToast.classList.add('hidden'); }
+            
+            if(gyroActive && !isDragging) {
+                hero.x += gyroX*CONFIG.MOVE_SPEED*CONFIG.GYRO_SENSITIVITY;
+                hero.y += gyroY*CONFIG.MOVE_SPEED*CONFIG.GYRO_SENSITIVITY;
+                clampHero();
+            }
+            if(hero.invincible) { hero.invincibleTimer--; if(hero.invincibleTimer<=0) hero.invincible=false; }
+
+            if(powerupCooldown <= 0) { spawnPowerup(); resetPowerupCooldown(); }
+            else powerupCooldown--;
+
+            powerups = powerups.filter(p => {
+                p.timer--;
+                if(p.timer <= 0) return false;
+                if(Math.hypot(p.x-hero.x, p.y-hero.y) < hero.radius + p.radius) {
+                    if(p.type === 'heart') { hp = Math.min(hp+1, CONFIG.MAX_HP); updateDisplay(); }
+                    else if(p.type === 'shield') { hero.shield = true; hero.shieldTimer = CONFIG.SHIELD_DURATION; }
+                    return false;
+                }
+                return true;
+            });
+
+            for (let i = skills.length-1; i >= 0; i--) {
+                const s = skills[i];
+                s.x += s.vx; s.y += s.vy; s.traveled += Math.hypot(s.vx, s.vy);
+                if(s.type === SkillType.ASHE_R) s.rotation = (s.rotation||0) + 0.1;
+                if(s.x < -120 || s.x > canvasWidth+120 || s.y < -120 || s.y > canvasHeight+120 || s.traveled > s.maxDist) { skills.splice(i,1); continue; }
+                if(!hero.invincible && Math.hypot(s.x-hero.x, s.y-hero.y) < hero.radius + s.radius) {
+                    if(hero.shield) { hero.shield = false; hero.shieldTimer = 0; skills.splice(i,1); continue; }
+                    hp--; if(hp<=0) { hp=0; updateDisplay(); gameLose(); return; }
+                    hero.invincible = true; hero.invincibleTimer = CONFIG.INVINCIBLE_DURATION;
+                    skills.splice(i,1); updateDisplay(); if(navigator.vibrate) navigator.vibrate(30);
+                    break;
+                }
+            }
+            
+            if(framesUntilNextSpawn <= 0) {
+                generateBulletBatch();
+                framesUntilNextSpawn = getCurrentDifficulty(score).spawnIntervalFrames;
+                if(score>40 && Math.random()<0.1) framesUntilNextSpawn = Math.max(2, framesUntilNextSpawn-1);
+            } else framesUntilNextSpawn--;
+            frameCounterForScore++; if(frameCounterForScore>=60) { frameCounterForScore=0; score++; updateDisplay(); }
+        }
+
+        // 绘制
+        function drawVarusQ(x,y,r) { ctx.save(); ctx.shadowBlur=10; ctx.shadowColor="#AA2E2E"; ctx.beginPath(); ctx.moveTo(x,y-r*0.8); ctx.lineTo(x+r*0.7,y); ctx.lineTo(x,y+r*0.8); ctx.lineTo(x-r*0.7,y); ctx.fillStyle="#7B2D8E"; ctx.fill(); ctx.beginPath(); ctx.moveTo(x,y-r*1.2); ctx.lineTo(x+r*0.4,y); ctx.lineTo(x,y+r*1.2); ctx.lineTo(x-r*0.4,y); ctx.fillStyle="#B74C9E"; ctx.fill(); ctx.beginPath(); ctx.arc(x,y,r*0.5,0,Math.PI*2); ctx.fillStyle="#DA4A4A"; ctx.fill(); ctx.restore(); }
+        function drawEzQ(x,y,r) { ctx.save(); ctx.shadowBlur=12; ctx.shadowColor="#F5BC42"; ctx.beginPath(); ctx.arc(x,y,r-2,0,Math.PI*2); ctx.fillStyle="#FFD966"; ctx.fill(); ctx.beginPath(); ctx.arc(x-2,y-2,r-5,0,Math.PI*2); ctx.fillStyle="#FFF2A8"; ctx.fill(); for(let i=0;i<4;i++) { let ang=Date.now()/100+i*Math.PI/2; let dx=Math.cos(ang)*r*0.6, dy=Math.sin(ang)*r*0.6; ctx.beginPath(); ctx.arc(x+dx,y+dy,3,0,Math.PI*2); ctx.fillStyle="#FFC107"; ctx.fill(); } ctx.restore(); }
+        function drawEzR(x,y,r) { ctx.save(); ctx.shadowBlur=18; ctx.shadowColor="#FFB347"; ctx.beginPath(); ctx.ellipse(x,y,r*0.9,r*0.5,0,0,Math.PI*2); ctx.fillStyle="#FFB347"; ctx.fill(); ctx.beginPath(); ctx.ellipse(x,y,r*0.6,r*0.3,0,0,Math.PI*2); ctx.fillStyle="#FFE484"; ctx.fill(); ctx.beginPath(); ctx.moveTo(x+r*0.7,y); ctx.lineTo(x+r*1.1,y-r*0.3); ctx.lineTo(x+r*1.1,y+r*0.3); ctx.fillStyle="#FFD966"; ctx.fill(); ctx.beginPath(); ctx.moveTo(x-r*0.7,y); ctx.lineTo(x-r*1.1,y-r*0.3); ctx.lineTo(x-r*1.1,y+r*0.3); ctx.fill(); ctx.restore(); }
+        function drawAsheR(x,y,r,rot) { ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.shadowBlur=14; ctx.shadowColor="#3E8EDE"; ctx.beginPath(); ctx.moveTo(0,-r*1.1); ctx.lineTo(r*0.6,-r*0.3); ctx.lineTo(r*0.3,0); ctx.lineTo(r*0.6,r*0.4); ctx.lineTo(0,r*1.2); ctx.lineTo(-r*0.6,r*0.4); ctx.lineTo(-r*0.3,0); ctx.lineTo(-r*0.6,-r*0.3); ctx.fillStyle="#6CC9FF"; ctx.fill(); ctx.beginPath(); ctx.moveTo(0,-r*0.9); ctx.lineTo(r*0.4,-r*0.2); ctx.lineTo(0,r*1.0); ctx.lineTo(-r*0.4,-r*0.2); ctx.fillStyle="#B8E2FF"; ctx.fill(); ctx.beginPath(); ctx.arc(0,0,r*0.4,0,Math.PI*2); ctx.fillStyle="#FFFFFF"; ctx.fill(); ctx.restore(); }
+        function drawSkill(s) { switch(s.type) { case SkillType.VARUS_Q: drawVarusQ(s.x,s.y,s.radius); break; case SkillType.EZ_Q: drawEzQ(s.x,s.y,s.radius); break; case SkillType.EZ_R: drawEzR(s.x,s.y,s.radius); break; case SkillType.ASHE_R: drawAsheR(s.x,s.y,s.radius,s.rotation||0); break; } }
+        function drawPowerup(p) {
+            ctx.save(); ctx.shadowBlur = 12;
+            const blink = (p.timer < 60 && (Math.floor(Date.now()/200)%2===0));
+            if(p.type === 'heart') {
+                ctx.shadowColor = '#ff4466'; ctx.fillStyle = '#ff3366';
+                ctx.beginPath(); ctx.moveTo(p.x, p.y-4); ctx.bezierCurveTo(p.x-8, p.y-12, p.x-14, p.y, p.x, p.y+10); ctx.bezierCurveTo(p.x+14, p.y, p.x+8, p.y-12, p.x, p.y-4); ctx.fill();
+                if(blink) { ctx.globalAlpha = 0.5; ctx.fill(); }
+            } else {
+                ctx.shadowColor = '#44aaff'; ctx.fillStyle = '#3a8cff';
+                ctx.beginPath(); ctx.moveTo(p.x, p.y-10); ctx.lineTo(p.x+8, p.y-4); ctx.lineTo(p.x+12, p.y+6); ctx.lineTo(p.x, p.y+2); ctx.lineTo(p.x-12, p.y+6); ctx.lineTo(p.x-8, p.y-4); ctx.closePath(); ctx.fill();
+                if(blink) { ctx.globalAlpha = 0.5; ctx.fill(); }
+            }
+            ctx.restore();
+        }
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0,0,0,canvasHeight);
+            grad.addColorStop(0,'#8ec0e8'); grad.addColorStop(1,'#3a74a8');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,canvasWidth,canvasHeight);
+        }
+        function drawHero(x,y,r,inv,glow,shield) {
+            ctx.save();
+            const diff = getCurrentDifficulty(score);
+            const glowColor = diff.color || '#FFD966';
+            if(glow) {
+                ctx.shadowBlur=30; ctx.shadowColor=glowColor;
+                ctx.beginPath(); ctx.arc(x,y,r+8,0,Math.PI*2);
+                ctx.fillStyle = glowColor+'40'; ctx.fill();
+            }
+            if(shield) {
+                for(let i=0;i<6;i++) {
+                    let ang = Date.now()/200 + i*Math.PI/3;
+                    let dx = Math.cos(ang)*r*1.2, dy = Math.sin(ang)*r*1.2;
+                    ctx.beginPath(); ctx.arc(x+dx, y+dy, 3, 0, Math.PI*2);
+                    ctx.fillStyle='#aad0ff'; ctx.shadowBlur=15; ctx.shadowColor='#3a8cff'; ctx.fill();
+                }
+                ctx.shadowBlur=20; ctx.shadowColor='#3a8cff';
+                ctx.beginPath(); ctx.arc(x,y,r+4,0,Math.PI*2);
+                ctx.strokeStyle='#aad0ff'; ctx.lineWidth=3; ctx.stroke();
+            }
+            ctx.shadowBlur=inv?20:12; ctx.shadowColor='#ffcc44';
+            ctx.beginPath(); ctx.arc(x,y,r-2,0,Math.PI*2); ctx.fillStyle='#F5CB5C'; ctx.fill();
+            ctx.beginPath(); ctx.arc(x,y,r-4,0,Math.PI*2); ctx.fillStyle='#E6A017'; ctx.fill();
+            ctx.fillStyle='#D4AF37'; ctx.beginPath(); ctx.ellipse(x-6,y-12,6,8,-0.2,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(x+6,y-12,6,8,0.2,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#2C2C2C'; ctx.beginPath(); ctx.arc(x-5,y-5,1.8,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(x+5,y-5,1.8,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#FFF'; ctx.beginPath(); ctx.arc(x-5.5,y-5.8,0.7,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(x+4.5,y-5.8,0.7,0,Math.PI*2); ctx.fill();
+            ctx.restore();
+        }
+
+        function draw() {
+            drawBackground();
+            if(gameActive) {
+                for(let s of skills) drawSkill(s);
+                for(let p of powerups) drawPowerup(p);
+                drawHero(hero.x, hero.y, hero.radius, hero.invincible, hero.glowTimer>0, hero.shield);
+                const barW=54, barX=hero.x-barW/2, barY=hero.y-hero.radius-14;
+                ctx.fillStyle='#222c'; ctx.fillRect(barX,barY,barW,6);
+                ctx.fillStyle= hp===3?'#3eff9e':(hp===2?'#ffb347':'#ff4f4f');
+                ctx.fillRect(barX,barY,barW*(hp/3),6);
+                const diff = getCurrentDifficulty(score);
+                ctx.font="bold 15px system-ui"; ctx.fillStyle="#FFE0A3"; ctx.shadowBlur=0;
+                ctx.fillText(`${diff.name} · ${(diff.speedMult*100).toFixed(0)}%`, canvasWidth-105, 38);
+                debugDiv.innerText = `${isPaused?'⏸':''}⏱️${score}s | ❤️${hp} | 🛡️${hero.shield?'开':'关'} | 道具CD ${Math.floor(powerupCooldown/60)}s`;
+            } else if(demoModeActive) {
+                for(let b of demoBullets) drawSkill(b);
+                debugDiv.innerText = `✨ 演示模式 | 生命❤️ 护盾🛡️ 随机出现`;
+            }
+        }
+
+        function gameLoop() {
+            if(gameActive && !isPaused) updateGame();
+            else if(!gameActive && demoModeActive && !gameOverFlag) updateDemoMode();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function bindEvents() {
+            canvas.addEventListener('touchstart', handleDragStart, {passive:false});
+            canvas.addEventListener('touchmove', handleDragMove, {passive:false});
+            canvas.addEventListener('touchend', handleDragEnd);
+            canvas.addEventListener('mousedown', handleDragStart);
+            window.addEventListener('mousemove', handleDragMove);
+            window.addEventListener('mouseup', handleDragEnd);
+            startBtn.addEventListener('click', ()=>{ resizeCanvas(); resetGame(); });
+            restartBtn.addEventListener('click', ()=>{ resizeCanvas(); resetGame(); });
+            homeBtnFromGameOver.addEventListener('click', returnToHomeFromGameOver);
+            resumeBtn.addEventListener('click', hidePauseAndResume);
+            homeBtnFromPause.addEventListener('click', returnToHomeFromPause);
+            pauseBtn.addEventListener('click', showPauseMenu);
+            musicBtn.addEventListener('click', toggleMusic);
+            homeMusicBtn.addEventListener('click', toggleMusic);
+            window.addEventListener('resize', ()=>{ resizeCanvas(); if(gameActive&&!isPaused) clampHero(); });
+        }
+
+        function init() {
+            loadHighestRecord();
+            initMusic();
+            musicEnabled = true; updateMusicUI();
+            resizeCanvas();
+            bindEvents();
+            fullResetToHome();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        init();
+    })();
+</script>
+</body>
+</html>
